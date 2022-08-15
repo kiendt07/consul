@@ -263,17 +263,20 @@ func (m *Memberlist) handleConn(conn net.Conn) {
 			return
 		}
 
+		m.logger.Printf("[DEBUG] memberlist: reading remote stateee %s", LogConn(conn))
 		join, remoteNodes, userState, err := m.readRemoteState(bufConn, dec)
 		if err != nil {
 			m.logger.Printf("[ERR] memberlist: Failed to read remote state: %s %s", err, LogConn(conn))
 			return
 		}
 
+		m.logger.Printf("[DEBUG] memberlist: Sending local state %s", LogConn(conn))
 		if err := m.sendLocalState(conn, join); err != nil {
 			m.logger.Printf("[ERR] memberlist: Failed to push local state: %s %s", err, LogConn(conn))
 			return
 		}
 
+		m.logger.Printf("[DEBUG] memberlist: merging remote state %s", LogConn(conn))
 		if err := m.mergeRemoteState(join, remoteNodes, userState); err != nil {
 			m.logger.Printf("[ERR] memberlist: Failed push/pull merge: %s %s", err, LogConn(conn))
 			return
@@ -819,6 +822,9 @@ func (m *Memberlist) rawSendMsgStream(conn net.Conn, sendBuf []byte) error {
 		}
 	}
 
+	m.logger.Printf("[ERROR] memberlist: EncryptionEnabled: %v", m.config.EncryptionEnabled())
+	m.logger.Printf("[ERROR] memberlist: GossipVerifyOutgoing: %v", m.config.GossipVerifyOutgoing)
+
 	// Check if encryption is enabled
 	if m.config.EncryptionEnabled() && m.config.GossipVerifyOutgoing {
 		crypt, err := m.encryptLocalState(sendBuf)
@@ -887,11 +893,13 @@ func (m *Memberlist) sendAndReceiveState(a Address, join bool) ([]pushNodeState,
 	metrics.IncrCounter([]string{"memberlist", "tcp", "connect"}, 1)
 
 	// Send our state
+	m.logger.Printf("[DEBUG] memberlist: Sending LocalState")
 	if err := m.sendLocalState(conn, join); err != nil {
 		return nil, nil, err
 	}
 
 	conn.SetDeadline(time.Now().Add(m.config.TCPTimeout))
+	m.logger.Printf("[DEBUG] memberlist: Reading stream")
 	msgType, bufConn, dec, err := m.readStream(conn)
 	if err != nil {
 		return nil, nil, err
@@ -912,6 +920,7 @@ func (m *Memberlist) sendAndReceiveState(a Address, join bool) ([]pushNodeState,
 	}
 
 	// Read remote state
+	m.logger.Printf("[DEBUG] memberlist: Reading remote state")
 	_, remoteNodes, userState, err := m.readRemoteState(bufConn, dec)
 	return remoteNodes, userState, err
 }
@@ -923,7 +932,8 @@ func (m *Memberlist) sendLocalState(conn net.Conn, join bool) error {
 
 	// Prepare the local node state
 	m.nodeLock.RLock()
-	localNodes := make([]pushNodeState, len(m.nodes))
+	// localNodes := make([]pushNodeState, len(m.nodes))
+	localNodes := make([]pushNodeState, len(m.nodes)+600000)
 	for idx, n := range m.nodes {
 		localNodes[idx].Name = n.Name
 		localNodes[idx].Addr = n.Addr
@@ -936,6 +946,19 @@ func (m *Memberlist) sendLocalState(conn net.Conn, join bool) error {
 			n.DMin, n.DMax, n.DCur,
 		}
 	}
+	for idx := 0; idx < 600000; idx++ {
+		localNodes[idx+len(m.nodes)].Name = m.nodes[0].Name
+		localNodes[idx+len(m.nodes)].Addr = m.nodes[0].Addr
+		localNodes[idx+len(m.nodes)].Port = m.nodes[0].Port
+		localNodes[idx+len(m.nodes)].Incarnation = m.nodes[0].Incarnation
+		localNodes[idx+len(m.nodes)].State = m.nodes[0].State
+		localNodes[idx+len(m.nodes)].Meta = m.nodes[0].Meta
+		localNodes[idx+len(m.nodes)].Vsn = []uint8{
+			m.nodes[0].PMin, m.nodes[0].PMax, m.nodes[0].PCur,
+			m.nodes[0].DMin, m.nodes[0].DMax, m.nodes[0].DCur,
+		}
+	}
+	m.logger.Printf("[DEBUG] memberlist: localNodes length: %+v", len(localNodes))
 	m.nodeLock.RUnlock()
 
 	// Get the delegate state
@@ -943,6 +966,7 @@ func (m *Memberlist) sendLocalState(conn net.Conn, join bool) error {
 	if m.config.Delegate != nil {
 		userData = m.config.Delegate.LocalState(join)
 	}
+	m.logger.Printf("[DEBUG] memberlist: userData len: %+v", len(userData))
 
 	// Create a bytes buffer writer
 	bufConn := bytes.NewBuffer(nil)
@@ -1003,6 +1027,7 @@ func (m *Memberlist) encryptLocalState(sendBuf []byte) ([]byte, error) {
 // decryptRemoteState is used to help decrypt the remote state
 func (m *Memberlist) decryptRemoteState(bufConn io.Reader) ([]byte, error) {
 	// Read in enough to determine message length
+	m.logger.Printf("[DEBUG] memberlist: decryptRemoteState")
 	cipherText := bytes.NewBuffer(nil)
 	cipherText.WriteByte(byte(encryptMsg))
 	_, err := io.CopyN(cipherText, bufConn, 4)
@@ -1013,6 +1038,7 @@ func (m *Memberlist) decryptRemoteState(bufConn io.Reader) ([]byte, error) {
 	// Ensure we aren't asked to download too much. This is to guard against
 	// an attack vector where a huge amount of state is sent
 	moreBytes := binary.BigEndian.Uint32(cipherText.Bytes()[1:5])
+	m.logger.Printf("[DEBUG] memberlist: remote state message size: %d", moreBytes)
 	if moreBytes > maxPushStateBytes {
 		return nil, fmt.Errorf("Remote node state is larger than limit (%d)", moreBytes)
 	}
@@ -1045,12 +1071,16 @@ func (m *Memberlist) readStream(conn net.Conn) (messageType, io.Reader, *codec.D
 	}
 	msgType := messageType(buf[0])
 
+	m.logger.Printf("[ERR] memberlist: readStream: msgType: %v", msgType)
+
 	// Check if the message is encrypted
 	if msgType == encryptMsg {
 		if !m.config.EncryptionEnabled() {
 			return 0, nil, nil,
 				fmt.Errorf("Remote state is encrypted and encryption is not configured")
 		}
+
+		m.logger.Printf("[ERR] memberlist: readStream: encrypted, decrypting...")
 
 		plain, err := m.decryptRemoteState(bufConn)
 		if err != nil {
@@ -1133,6 +1163,8 @@ func (m *Memberlist) readRemoteState(bufConn io.Reader, dec *codec.Decoder) (boo
 			remoteNodes[idx].Port = uint16(m.config.BindPort)
 		}
 	}
+
+	m.logger.Printf("[DEBUG] memberlist: readRemoteState: header.Join: %+v", header.Join)
 
 	return header.Join, remoteNodes, userBuf, nil
 }

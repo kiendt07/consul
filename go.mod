@@ -15,6 +15,7 @@ require (
 	github.com/armon/go-metrics v0.3.6
 	github.com/armon/go-radix v1.0.0
 	github.com/aws/aws-sdk-go v1.25.41
+	github.com/chzyer/readline v1.5.1 // indirect
 	github.com/coredns/coredns v1.1.2
 	github.com/coreos/go-oidc v2.1.0+incompatible
 	github.com/digitalocean/godo v1.10.0 // indirect
@@ -27,7 +28,7 @@ require (
 	github.com/google/go-cmp v0.5.2
 	github.com/google/go-querystring v1.0.0 // indirect
 	github.com/google/gofuzz v1.2.0
-	github.com/google/pprof v0.0.0-20210601050228-01bbb1931b22
+	github.com/google/pprof v0.0.0-20220729232143-a41b82acbcb1
 	github.com/google/tcpproxy v0.0.0-20180808230851-dfa16c61dad2
 	github.com/hashicorp/consul/api v1.8.1
 	github.com/hashicorp/consul/sdk v0.7.0
@@ -59,6 +60,7 @@ require (
 	github.com/hashicorp/serf v0.9.5
 	github.com/hashicorp/vault/api v1.0.5-0.20200717191844-f687267c8086
 	github.com/hashicorp/yamux v0.0.0-20210826001029-26ff87cf9493
+	github.com/ianlancetaylor/demangle v0.0.0-20220517205856-0058ec4f073c // indirect
 	github.com/imdario/mergo v0.3.6
 	github.com/joyent/triton-go v1.7.1-0.20200416154420-6801d15b779f // indirect
 	github.com/konsorten/go-windows-terminal-sequences v1.0.2 // indirect
@@ -86,7 +88,7 @@ require (
 	golang.org/x/net v0.0.0-20211209124913-491a49abca63
 	golang.org/x/oauth2 v0.0.0-20190604053449-0f29369cfe45
 	golang.org/x/sync v0.0.0-20210220032951-036812b2e83c
-	golang.org/x/sys v0.0.0-20210423082822-04245dca01da
+	golang.org/x/sys v0.0.0-20220811171246-fbc7d0a398ab
 	golang.org/x/time v0.0.0-20200630173020-3af7569d3a1e
 	google.golang.org/api v0.9.0 // indirect
 	google.golang.org/appengine v1.6.0 // indirect
@@ -98,3 +100,5 @@ require (
 )
 
 replace istio.io/gogo-genproto v0.0.0-20190124151557-6d926a6e6feb => github.com/istio/gogo-genproto v0.0.0-20190124151557-6d926a6e6feb
+
+replace github.com/hashicorp/memberlist => ./vendor/github.com/hashicorp/memberlist
